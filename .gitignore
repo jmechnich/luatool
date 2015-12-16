@@ -1,0 +1,4 @@
+/build/
+/dist/
+/luatool.egg-info/
+*~

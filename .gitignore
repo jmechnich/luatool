@@ -2,3 +2,4 @@
 /dist/
 /luatool.egg-info/
 *~
+*.pyc

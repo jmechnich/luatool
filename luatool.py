@@ -79,6 +79,14 @@ class AbstractTransport:
             else:
                 line += char
 
+    def reset(self):
+        self.writeln("\r")
+        self.writeln("end\r")
+        while True:
+            char = self.read(1)
+            if char == '' or char == chr(62):
+                break
+
 
 class SerialTransport(AbstractTransport):
     def __init__(self, port, baud, delay):
@@ -124,13 +132,11 @@ class TcpSocketTransport(AbstractTransport):
 
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        except socket.error as e:
-            raise TransportError(e.strerror)
-
-        try:
+            self.socket.settimeout(3)
             self.socket.connect((host, port))
         except socket.error as e:
             raise TransportError(e.strerror)
+
         # read intro from telnet server (see telnet_srv.lua)
         self.socket.recv(50)
 
@@ -173,6 +179,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--dest',    default=None,           help='Destination file on MCU, default to source file name')
     parser.add_argument('-c', '--compile', action='store_true',    help='Compile lua to lc after upload')
     parser.add_argument('-r', '--restart', action='store_true',    help='Restart MCU after upload')
+    parser.add_argument('-n', '--restartnow', action='store_true',    help='Restart MCU immediately')
     parser.add_argument('-d', '--dofile',  action='store_true',    help='Run the Lua script after upload')
     parser.add_argument('-v', '--verbose', action='store_true',    help="Show progress messages.")
     parser.add_argument('-a', '--append',  action='store_true',    help='Append source file to destination file.')
@@ -183,10 +190,32 @@ if __name__ == '__main__':
     parser.add_argument('--delay',         default=0.3,            help='Delay in seconds between each write.', type=float)
     parser.add_argument('--delete',        default=None,           help='Delete a lua/lc file from device.')
     parser.add_argument('--ip',            default=None,           help='Connect to a telnet server on the device (--ip IP[:port])')
+    parser.add_argument('--getip',         action='store_true',    help='Read current IP via serial port')
     args = parser.parse_args()
 
     transport = decidetransport(args)
+    
+    if args.getip:
+        stransport = SerialTransport(args.port, args.baud, args.delay)
+        #stransport.reset()
+        stransport.serial.write("print(wifi.sta.getip())\r")
+        ans=""
+        while True:
+            char = stransport.read(1)
+            if char == '' or char == chr(62):
+                break
+            ans += char
+        ans = ans.split()
+        ip = ans[1].strip() if len(ans) > 1 else "0.0.0.0"
+        print(ip)
+        del stransport
+        sys.exit(0)
 
+    if args.restartnow:
+        transport.writeln("node.restart()\r")
+        print()
+        sys.exit(0)
+        
     if args.list:
         transport.writeln("local l = file.list();for k,v in pairs(l) do print('name:'..k..', size:'..v)end\r", 0)
         while True:

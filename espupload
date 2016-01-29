@@ -1,0 +1,110 @@
+#!/bin/sh
+
+# serial settings
+DEV=/dev/ttyUSB0
+BAUD=9600
+SERIAL_PROG="screen $DEV $BAUD"
+
+# luatool settings
+LUATOOL_BIN=luatool.py
+LUATOOL_OPT=""
+
+# other variables
+IP=""
+TS=.timestamp
+RCFILE=".espuploadrc"
+
+# override variables above by sourcing first global, then local rc file
+[ -e "$HOME/$RCFILE" ] && . "$HOME/$RCFILE"
+[ -e "./$RCFILE" ] && . "./$RCFILE"
+
+check_timestamp ()
+{
+    if [ ! -e $TS ] || [ "$1" -nt $TS ]; then
+        true
+    else
+        false
+    fi
+}
+
+# upload one lua file at a time (usage: upload_script file.lua)"
+upload_script ()
+{
+    SCRIPT="$1"
+    shift
+    echo "Checking $SCRIPT"
+    if [ ! -e "$SCRIPT" ]; then
+        return
+    fi
+    
+    if check_timestamp "$SCRIPT"; then
+        echo "Running '$LUATOOL -f $SCRIPT $@'"
+        $LUATOOL -f "$SCRIPT" $@
+        [ $? -ne 0 ] && exit 1
+    fi
+}
+
+# check if device can be reached via network
+if [ ! -z "$IP" ]; then
+    if ping -q -c1 -W3 "$IP" > /dev/null; then
+        MAC=`arp -n -a | grep "$IP" | awk '{ print $4 }'`
+        if echo "$MAC" | grep -q '^ac:d0:74\|^5c:cf:7f\|^18:fe:34'; then
+            echo "Found ESP8266 with MAC address $MAC at $IP"
+            if nc -z $IP 23; then
+                echo "Using telnet connection"
+                LUATOOL_OPT="--ip $IP $LUATOOL_OPT"
+            else
+                echo "Telnet not running, falling back to serial"
+            fi
+        else
+            echo "$IP is not an Espressif device"
+        fi
+    else
+        echo "$IP is down"
+    fi
+fi
+
+# build luatool command line
+LUATOOL="$LUATOOL_BIN -p $DEV -b $BAUD $LUATOOL_OPT"
+
+# upload and compile all lua files except init.lua
+for s in *.lua; do
+    if [ "$s" = local.lua ] || [ "$s" = init.lua ]; then
+        continue
+    fi
+    upload_script "$s" -c
+done
+
+# upload init.lua (or local.lua as init.lua if it exists)
+if [ -r local.lua ]; then
+    upload_script local.lua -t init.lua
+else
+    upload_script init.lua
+fi
+
+# update timestamp
+touch $TS
+
+# restart device
+echo "Restarting"
+$LUATOOL -n
+
+# connect via serial device if available
+if [ -r $DEV ]; then
+    $SERIAL_PROG
+    exit 0
+fi
+
+# try connecting via telnet if IP was set
+if [ ! -z $IP ]; then
+    echo "Checking telnet server at $IP"
+    for i in seq 5; do
+        if nc -z $IP 23; then
+            telnet $IP
+            exit 0
+        else
+            echo "Sleeping 3 seconds..."
+            sleep 3
+        fi
+    done
+fi

@@ -32,5 +32,8 @@ setup(
     ],
     scripts=[
         'luatool.py',
+        'espflash',
+        'espmodinfo',
+        'espupload',
     ],
 )

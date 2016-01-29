@@ -1,0 +1,16 @@
+#!/bin/sh
+
+if [ ! -r "$1" ]; then
+    echo "Could not open '$1'"
+    exit 1
+fi
+
+DEV=/dev/ttyUSB0
+BAUD=9600
+RCFILE=".espuploadrc"
+
+# override variables above by sourcing first global, then local rc file
+[ -e "$HOME/$RCFILE" ] && . "$HOME/$RCFILE"
+[ -e "./$RCFILE" ] && . "./$RCFILE"
+
+esptool.py -p "$DEV" -b "$BAUD" write_flash 0x00000 "$1"
